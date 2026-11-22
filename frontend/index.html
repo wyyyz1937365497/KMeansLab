@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-ready="0" data-api="0">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>K-Means 聚类实验室</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ============ 顶栏 ============ -->
+    <header id="topbar">
+      <div class="brand">
+        <div class="logo">◈</div>
+        <div class="brand-text">
+          <h1>K-Means 聚类实验室</h1>
+          <p>PCA 降维可视化 · 二分裂过程 · 多算法多种子对比</p>
+        </div>
+      </div>
+      <div id="status-pill" data-state="boot"><span class="dot"></span><span id="status-text">初始化…</span></div>
+      <div class="top-actions">
+        <button id="btn-theme" class="btn ghost" title="切换明暗主题">◐ 亮色</button>
+        <button id="btn-export-png" class="btn ghost" disabled title="将主视图散点图保存为 PNG">⬇ 导出 PNG</button>
+        <button id="btn-export-json" class="btn ghost" disabled title="将本次聚类完整结果保存为 JSON">⬇ 导出 JSON</button>
+      </div>
+    </header>
+
+    <div id="fatal-banner" class="hidden"></div>
+
+    <nav id="view-tabs" role="tablist">
+      <button class="view-tab active" data-view="lab" role="tab">实验台</button>
+      <button class="view-tab" data-view="explain" role="tab">改进说明</button>
+    </nav>
+
+    <div id="view-lab">
+
+    <main id="layout">
+
+      <!-- ============ 左栏：数据集 / 配置 ============ -->
+      <aside class="col col-left">
+
+        <section class="card" id="card-dataset">
+          <header class="card-head">
+            <h2>数据集</h2>
+            <span class="badge" id="dataset-count-badge">—</span>
+          </header>
+          <div class="card-body">
+            <label class="field">
+              <span>选择数据集</span>
+              <select id="sel-dataset">
+                <option value="">加载中…</option>
+              </select>
+            </label>
+            <dl class="kv" id="dataset-summary">
+              <div class="kv-row"><dt>样本数</dt><dd id="ds-samples">—</dd></div>
+              <div class="kv-row"><dt>特征数</dt><dd id="ds-features">—</dd></div>
+              <div class="kv-row"><dt>类别数</dt><dd id="ds-classes">—</dd></div>
+              <div class="kv-row"><dt>来源</dt><dd id="ds-source">—</dd></div>
+            </dl>
+            <p id="ds-description" class="muted small">—</p>
+            <div class="chips" id="ds-feature-chips"></div>
+          </div>
+        </section>
+
+        <section class="card" id="card-run">
+          <header class="card-head"><h2>聚类配置</h2></header>
+          <div class="card-body">
+            <label class="field">
+              <span>算法</span>
+              <select id="sel-algorithm">
+                <option value="kmeans">标准 K-Means</option>
+                <option value="bisecting" selected>二分 K-Means · B0</option>
+                <option value="improved">改进二分 · B2（最大 SSE 降幅）</option>
+                <option value="b1">改进二分 · B1（最大簇 SSE）</option>
+              </select>
+            </label>
+            <div class="field-row">
+              <label class="field"><span>簇数 k</span><input id="inp-k" type="number" min="1" step="1" value="3" /></label>
+              <label class="field"><span>随机种子</span>
+                <span class="seed-row">
+                  <input id="inp-seed" type="number" step="1" value="42" />
+                  <button id="btn-random-seed" class="btn icon" title="换一个随机种子">🎲</button>
+                </span>
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>最大迭代</span><input id="inp-max-iter" type="number" min="1" step="1" value="100" /></label>
+              <label class="field"><span>收敛容差 tol</span><input id="inp-tol" type="number" min="0" step="0.000001" value="0.000001" /></label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>重启次数（B1/B2）</span><input id="inp-restarts" type="number" min="1" max="20" step="1" value="5" /></label>
+              <label class="field">
+                <span>标准 K-Means 初始化</span>
+                <select id="sel-init">
+                  <option value="random">random（随机）</option>
+                  <option value="kmeans++">kmeans++</option>
+                </select>
+              </label>
+            </div>
+            <button id="btn-run" class="btn primary block">▶ 运行聚类</button>
+          </div>
+        </section>
+
+        <section class="card" id="card-compare-cfg">
+          <header class="card-head"><h2>对比实验</h2></header>
+          <div class="card-body">
+            <div class="field-row">
+              <label class="field">
+                <span>重复次数 repeats</span>
+                <input id="inp-repeats" type="number" min="1" step="1" value="20" />
+              </label>
+              <label class="field">
+                <span>重启次数 restarts</span>
+                <input id="inp-cmp-restarts" type="number" min="1" step="1" value="5" />
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span>k 下限</span><input id="inp-k-min" type="number" min="1" step="1" value="1" /></label>
+              <label class="field"><span>k 上限</span><input id="inp-k-max" type="number" min="1" step="1" value="8" /></label>
+            </div>
+            <button id="btn-compare" class="btn ghost block">⚖ 运行对比实验</button>
+          </div>
+        </section>
+
+      </aside>
+
+      <!-- ============ 中栏：主视图 / 时间轴 / 分裂树 / SSE ============ -->
+      <section class="col col-main">
+
+        <section class="card hero-card" id="card-hero" data-result="0">
+          <header class="card-head">
+            <h2>PCA 主视图</h2>
+            <div class="head-tools">
+              <span class="muted small" id="pca-note">—</span>
+              <label class="check" title="叠加各簇质心随帧序列的运动轨迹（由历史帧推导）">
+                <input type="checkbox" id="chk-traj" checked /> 质心轨迹
+              </label>
+            </div>
+          </header>
+          <div class="chart-wrap">
+            <div id="chart-scatter" class="chart"></div>
+            <div class="empty-overlay show" id="hero-empty">
+              <div class="empty-icon">◌</div>
+              <p>选择数据集并点击「运行聚类」</p>
+              <p class="muted small">结果将以 PCA 二维散点呈现，并叠加质心运动轨迹；<br/>点击散点或质心可查看该簇统计。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="card-timeline">
+          <div class="tl-bar">
+            <div class="tl-buttons">
+              <button id="tl-first" class="btn icon" disabled title="回到起点">⏮</button>
+              <button id="tl-prev" class="btn icon" disabled title="上一步（←）">◀</button>
+              <button id="tl-play" class="btn icon" disabled title="播放 / 暂停（空格）">▶</button>
+              <button id="tl-next" class="btn icon" disabled title="下一步（→）">▶|</button>
+              <button id="tl-next-split" class="btn icon" disabled title="跳到下一个分裂事件">⏭ 分裂</button>
+              <button id="tl-last" class="btn icon" disabled title="跳到最后">⏭</button>
+            </div>
+            <input id="tl-slider" type="range" min="0" max="0" value="0" disabled
+                   title="拖动以在帧序列间拖拽浏览" />
+            <span id="tl-pos" class="mono">0 / 0</span>
+            <span id="tl-event" class="badge ev">—</span>
+            <label class="tl-speed">速度
+              <select id="tl-speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+                <option value="8">8×</option>
+              </select>
+            </label>
+            <span id="tl-iter" class="muted small mono">迭代 —</span>
+          </div>
+        </section>
+
+        <div class="duo">
+          <section class="card" id="card-tree">
+            <header class="card-head">
+              <h2>分裂树</h2>
+              <span class="muted small">与时间轴同步 · 点击节点可跳转</span>
+            </header>
+            <div class="chart-wrap">
+              <div id="chart-tree" class="chart"></div>
+              <div class="empty-overlay show" id="tree-empty"><p>尚无分裂树</p></div>
+            </div>
+          </section>
+          <section class="card" id="card-sse">
+            <header class="card-head">
+              <h2>SSE 曲线</h2>
+              <span class="muted small">▲ 为分裂完成帧 · 点击可跳转</span>
+            </header>
+            <div class="chart-wrap">
+              <div id="chart-sse" class="chart"></div>
+              <div class="empty-overlay show" id="sse-empty"><p>尚无数据</p></div>
+            </div>
+          </section>
+        </div>
+
+      </section>
+
+      <!-- ============ 右栏：指标 / 当前帧 / 聚类统计 ============ -->
+      <aside class="col col-right">
+
+        <section class="card" id="card-metrics">
+          <header class="card-head">
+            <h2>运行指标</h2>
+            <span class="badge" id="metrics-algo">—</span>
+          </header>
+          <div class="card-body">
+            <dl id="metrics-kv"></dl>
+            <p class="muted small" id="metrics-hint">运行聚类后显示 SSE / ARI / 轮廓系数等整体指标。</p>
+          </div>
+        </section>
+
+        <section class="card" id="card-frame">
+          <header class="card-head"><h2>当前帧</h2></header>
+          <div class="card-body">
+            <dl id="frame-kv"></dl>
+            <p class="muted small" id="frame-hint">时间轴当前帧的详细信息。</p>
+            <div id="frame-details"></div>
+          </div>
+        </section>
+
+        <section class="card" id="card-clusters">
+          <header class="card-head"><h2>聚类统计</h2></header>
+          <div class="card-body">
+            <div class="chips" id="cluster-chips"></div>
+            <div id="cluster-detail">
+              <p class="muted small" id="cluster-hint">点击散点、质心或上方标签查看该簇的统计与全特征中心。</p>
+            </div>
+          </div>
+        </section>
+
+      </aside>
+    </main>
+
+    <!-- ============ 对比实验结果 ============ -->
+    <section class="card" id="card-compare" data-open="0">
+      <header class="card-head">
+        <h2>对比实验结果</h2>
+        <div class="tabs" id="compare-tabs">
+          <button class="tab active" data-pane="pane-summary">汇总指标</button>
+          <button class="tab" data-pane="pane-bar">SSE 对比</button>
+          <button class="tab" data-pane="pane-sens">参数敏感性</button>
+          <button class="tab" data-pane="pane-runs">多种子明细</button>
+        </div>
+      </header>
+      <div id="compare-empty">运行对比实验后，此处展示汇总指标、SSE 柱状图、参数敏感性与多种子明细。</div>
+      <div class="card-body">
+        <div class="pane active" id="pane-summary">
+          <p id="compare-meta" class="muted small"></p>
+          <div class="table-scroll tall">
+            <table class="data" id="tbl-summary"></table>
+          </div>
+        </div>
+        <div class="pane" id="pane-bar">
+          <div class="pane-head">
+            <span class="muted small">各算法指标对比（绿色为最优；平均 SSE 含 ±1 标准差误差棒）</span>
+            <label class="inline-filter">指标
+              <select id="sel-compbar-metric">
+                <option value="mean_sse" selected>平均 SSE</option>
+                <option value="mean_ari">平均 ARI</option>
+                <option value="mean_elapsed_ms">平均耗时 (ms)</option>
+              </select>
+            </label>
+            <button id="btn-export-compbar" class="btn ghost sm">导出 PNG</button>
+          </div>
+          <div id="chart-compbar" class="chart comp"></div>
+        </div>
+        <div class="pane" id="pane-sens">
+          <div class="pane-head">
+            <span class="muted small">平均 SSE 随 k 变化（参数敏感性）</span>
+            <button id="btn-export-sens" class="btn ghost sm">导出 PNG</button>
+          </div>
+          <div id="chart-sens" class="chart comp"></div>
+        </div>
+        <div class="pane" id="pane-runs">
+          <div class="pane-head">
+            <label class="inline-filter">算法
+              <select id="runs-filter-algo"><option value="all">全部</option></select>
+            </label>
+            <label class="inline-filter">k
+              <select id="runs-filter-k"><option value="all">全部</option></select>
+            </label>
+            <span id="runs-note" class="muted small"></span>
+          </div>
+          <div class="table-scroll tall">
+            <table class="data" id="tbl-runs"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    </div><!-- /view-lab -->
+
+    <section id="view-explain" class="hidden">
+      <header class="explain-head">
+        <h2>二分 K-Means 的三项自主改进</h2>
+        <p class="explain-lead">基线二分 K-Means 每轮只分裂“SSE 最大”的簇，且每次分裂只试一组初始中心。改进分别针对<strong>初始化敏感</strong>、<strong>单次分裂的局部最优</strong>、<strong>分裂顺序的贪心误差</strong>，代价是更多候选评估。</p>
+      </header>
+
+      <div class="imp-grid">
+        <article class="imp">
+          <h3><span class="tag">A</span>K-Means++ 初始化</h3>
+          <p>子簇的初始中心不再随机取点，而是按到已选中心距离平方加权采样，使初始中心彼此分散。</p>
+          <div class="formula">P(x) = D(x)² / Σ D(x)²</div>
+          <p class="impact">Wine：SSE 标准差 24.88 → 19.55；Seeds 平均迭代 11.55 → 10.20</p>
+        </article>
+        <article class="imp">
+          <h3><span class="tag">B</span>多次初始化择优</h3>
+          <p>每个候选簇做 r 次 K=2 拟合（默认 5 次），保留 SSE 最低的一组，降低单次分裂的随机波动。</p>
+          <div class="formula">SSE* = min<sub>t=1..r</sub> SSE(K=2, seed<sub>t</sub>)</div>
+          <p class="impact">Seeds 454.43 → 448.93；Wine 1342.48 → 1329.28</p>
+        </article>
+        <article class="imp">
+          <h3><span class="tag">C</span>全局 SSE 降幅选簇</h3>
+          <p>不再只挑 SSE 最大的簇，而是对所有可分裂簇试算一次分裂，选整体目标下降最多者。</p>
+          <div class="formula">ΔJ = J(C) − [ J(C₁) + J(C₂) ]</div>
+          <p class="impact">K=8：Seeds 262.46 → 260.37；Wine 980.27 → 976.90</p>
+        </article>
+      </div>
+
+      <section class="card">
+        <header class="card-head"><h2>消融矩阵</h2><span class="muted small">每次只放开一个变量，隔离各改进的贡献</span></header>
+        <div class="card-body">
+          <table class="data ablate">
+            <thead><tr><th>版本</th><th>初始化</th><th>每个候选重启</th><th>选簇依据</th></tr></thead>
+            <tbody>
+              <tr><td>B0</td><td>随机取点</td><td>1</td><td>最大簇 SSE</td></tr>
+              <tr><td>B0++</td><td>K-Means++</td><td>1</td><td>最大簇 SSE</td></tr>
+              <tr><td>B1</td><td>K-Means++</td><td>5</td><td>最大簇 SSE</td></tr>
+              <tr><td>B2</td><td>K-Means++</td><td>5</td><td>最大 SSE 降幅 ΔJ</td></tr>
+            </tbody>
+          </table>
+          <div class="flow">
+            <span class="step">标准化数据</span><span class="arrow">→</span>
+            <span class="step">枚举可分裂叶簇</span><span class="arrow">→</span>
+            <span class="step">每个候选做 r 次 K=2</span><span class="arrow">→</span>
+            <span class="step">取 ΔJ 最大</span><span class="arrow">→</span>
+            <span class="step">更新树与标签</span><span class="arrow">→</span>
+            <span class="step">达到 K 停止</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card-head"><h2>实测效果</h2><span class="muted small">K=3，20 个种子（42–61），同一种子跨算法配对</span></header>
+        <div class="card-body">
+          <div class="table-scroll">
+            <table class="data">
+              <thead><tr><th>算法</th><th>Seeds SSE 均值 ± 标准差</th><th>Seeds ARI</th><th>Wine SSE 均值 ± 标准差</th><th>Wine ARI</th><th>耗时 ms</th></tr></thead>
+              <tbody>
+                <tr><td>B0</td><td>454.43 ± 6.84</td><td>.7479</td><td>1342.80 ± 24.88</td><td>.6492</td><td>1.43 / 2.45</td></tr>
+                <tr><td>B0++</td><td>454.43 ± 6.84</td><td>.7479</td><td>1342.48 ± 19.55</td><td>.6453</td><td>1.78 / 2.12</td></tr>
+                <tr><td>B1</td><td>448.93 ± 4.91</td><td>.7419</td><td>1329.28 ± 24.10</td><td>.6787</td><td>5.85 / 6.94</td></tr>
+                <tr><td>B2</td><td>448.93 ± 4.91</td><td>.7419</td><td>1329.28 ± 24.10</td><td>.6787</td><td>8.28 / 9.83</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted small">耗时列为 Seeds / Wine。数据与实验页“对比实验”同源，可复现。</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card-head"><h2>代价与边界</h2><span class="muted small">改进不是无条件的</span></header>
+        <div class="card-body">
+          <ul class="limits">
+            <li>B2 在 K=3 时与 B1 结果相同，却多评估候选、耗时更高；收益只在 K 较大时出现。</li>
+            <li>多次重启降低 SSE，但 ARI 可能下降（Seeds .7479 → .7419）：目标函数与真实标签并不完全一致。</li>
+            <li>候选评估次数随 K 增长：K=8 时 B2 评估 28 次，B1 仅 7 次。</li>
+            <li>所有随机过程由种子派生，同种子逐位复现，便于报告与答辩核对。</li>
+          </ul>
+          <div class="explain-actions">
+            <button id="btn-go-lab" class="btn ghost">去实验页手动复现</button>
+            <button id="btn-go-compare" class="btn primary">运行 20 次对比实验</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+  </div>
+
+  <div id="toasts"></div>
+
+  <!-- 本地 ECharts（vendor/ 由工程提供；若缺失，main.js 将探测备用路径并提示） -->
+  <script src="vendor/echarts.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/panels.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

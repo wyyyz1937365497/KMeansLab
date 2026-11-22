@@ -1,0 +1,32 @@
+{
+  "pca_explained": [
+    0.7187,
+    0.1711
+  ],
+  "moons": {
+    "kmeans": {
+      "ari": 0.2343,
+      "sse": 120.9819
+    },
+    "dbscan": {
+      "clusters": 2,
+      "noise": 0,
+      "ari": 1.0
+    }
+  },
+  "seeds_dbscan": {
+    "eps": 0.8,
+    "min_samples": 5,
+    "clusters": 3,
+    "noise": 59,
+    "ari": 0.273,
+    "silhouette": 0.3755
+  },
+  "seeds_hierarchical": {
+    "linkage": "average",
+    "n": 90,
+    "k": 3,
+    "ari": 0.8115,
+    "silhouette": 0.4367
+  }
+}

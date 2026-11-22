@@ -37,5 +37,24 @@ uv run --locked python scripts/run_experiments.py ./experiment_results
 
 批处理输出 Seeds/Wine 逐次对比结果、K 扫描及固定种子的演示帧。耗时受硬件和进程调度影响；跨平台对比应针对 SSE、ARI、轮廓系数等数值使用浮点容差。算法和数据层不依赖 GUI；`app/` 统一记录/投影/序列化，`frontend/` 只播放已记录状态。
 
+## 扩展：DBSCAN 与层次聚类
+
+为课堂展示补充了两个基础算法，不接入主界面的时间轴，单独出图：
+
+```sh
+# 需要 matplotlib；可直接用已装绘图库的 docs 环境
+/home/wyyyz/.local/share/uv-envs/docs/bin/python scripts/run_clustering_extras.py
+```
+
+- `algorithms/dbscan.py`：核心点 / 边界点 / 噪声，eps 与 min_samples；
+- `algorithms/hierarchical.py`：single / average / complete 三种链接，输出 dendrogram 的 Z 矩阵，`cut(k)` 切树；
+- 图：`docs/figures/kmeans-vs-dbscan.png`（双月数据上 K-Means 失败、DBSCAN 成功）、`docs/figures/dbscan.png`、`docs/figures/hierarchical.png`；
+- 指标：`docs/clustering_extras.json`（ARI、轮廓系数、噪声数）。
+
+展示材料：
+
+- [口语底稿](docs/presentation_notes.md)
+- [一页速查卡](docs/算法速查卡.pdf)
+
 - [数据来源与许可](datasets/SOURCES.md)
 - [实验报告](docs/experiment_report.md)

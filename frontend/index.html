@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>K-Means 聚类实验室</title>
+  <title>聚类实验室 · K-Means / DBSCAN / 层次</title>
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
@@ -14,8 +14,8 @@
       <div class="brand">
         <div class="logo">◈</div>
         <div class="brand-text">
-          <h1>K-Means 聚类实验室</h1>
-          <p>PCA 降维可视化 · 二分裂过程 · 多算法多种子对比</p>
+          <h1>聚类实验室</h1>
+          <p>K-Means / DBSCAN / 层次聚类 · PCA 可视化 · 过程回放</p>
         </div>
       </div>
       <div id="status-pill" data-state="boot"><span class="dot"></span><span id="status-text">初始化…</span></div>
@@ -73,28 +73,43 @@
                 <option value="bisecting" selected>二分 K-Means · B0</option>
                 <option value="improved">改进二分 · B2（最大 SSE 降幅）</option>
                 <option value="b1">改进二分 · B1（最大簇 SSE）</option>
+                <option value="dbscan">DBSCAN（密度聚类）</option>
+                <option value="hierarchical">层次聚类（average linkage）</option>
               </select>
             </label>
-            <div class="field-row">
+            <div class="field-row" id="row-k">
               <label class="field"><span>簇数 k</span><input id="inp-k" type="number" min="1" step="1" value="3" /></label>
-              <label class="field"><span>随机种子</span>
+              <label class="field" id="field-seed"><span>随机种子</span>
                 <span class="seed-row">
                   <input id="inp-seed" type="number" step="1" value="42" />
                   <button id="btn-random-seed" class="btn icon" title="换一个随机种子">🎲</button>
                 </span>
               </label>
             </div>
-            <div class="field-row">
+            <div class="field-row" id="row-iter">
               <label class="field"><span>最大迭代</span><input id="inp-max-iter" type="number" min="1" step="1" value="100" /></label>
               <label class="field"><span>收敛容差 tol</span><input id="inp-tol" type="number" min="0" step="0.000001" value="0.000001" /></label>
             </div>
-            <div class="field-row">
+            <div class="field-row" id="row-restarts">
               <label class="field"><span>重启次数（B1/B2）</span><input id="inp-restarts" type="number" min="1" max="20" step="1" value="5" /></label>
               <label class="field">
                 <span>标准 K-Means 初始化</span>
                 <select id="sel-init">
                   <option value="random">random（随机）</option>
                   <option value="kmeans++">kmeans++</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-row hidden" id="row-dbscan">
+              <label class="field"><span>eps 邻域半径</span><input id="inp-eps" type="number" min="0.01" step="0.05" value="0.8" /></label>
+              <label class="field"><span>min_samples</span><input id="inp-min-samples" type="number" min="1" step="1" value="5" /></label>
+            </div>
+            <div class="field-row hidden" id="row-hier">
+              <label class="field"><span>链接方式</span>
+                <select id="sel-linkage">
+                  <option value="average" selected>average（平均距离）</option>
+                  <option value="single">single（最近点）</option>
+                  <option value="complete">complete（最远点）</option>
                 </select>
               </label>
             </div>
@@ -178,8 +193,8 @@
         <div class="duo">
           <section class="card" id="card-tree">
             <header class="card-head">
-              <h2>分裂树</h2>
-              <span class="muted small">与时间轴同步 · 点击节点可跳转</span>
+              <h2 id="tree-title">分裂树</h2>
+              <span class="muted small" id="tree-sub">与时间轴同步 · 点击节点可跳转</span>
             </header>
             <div class="chart-wrap">
               <div id="chart-tree" class="chart"></div>
@@ -188,8 +203,8 @@
           </section>
           <section class="card" id="card-sse">
             <header class="card-head">
-              <h2>SSE 曲线</h2>
-              <span class="muted small">▲ 为分裂完成帧 · 点击可跳转</span>
+              <h2 id="sse-title">SSE 曲线</h2>
+              <span class="muted small" id="sse-sub">▲ 为分裂完成帧 · 点击可跳转</span>
             </header>
             <div class="chart-wrap">
               <div id="chart-sse" class="chart"></div>

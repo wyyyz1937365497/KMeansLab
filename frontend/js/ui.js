@@ -35,7 +35,8 @@
     iteration: '迭代',
     split_complete: '分裂完成',
     converged: '收敛',
-    stopped: '达到迭代上限'
+    stopped: '达到迭代上限',
+    result: '聚类结果'
   };
   var ALGO_LABELS = {
     kmeans: 'K-Means',
@@ -45,7 +46,9 @@
     b0: '二分 b0',
     b0_pp: '二分 b0++',
     b1: '变体 b1',
-    b2: '变体 b2'
+    b2: '变体 b2',
+    dbscan: 'DBSCAN',
+    hierarchical: '层次聚类'
   };
   function eventLabel(e) { return EVENT_LABELS[e] || (e || '—'); }
   function algoLabel(a) { return ALGO_LABELS[a] || String(a); }

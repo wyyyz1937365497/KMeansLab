@@ -49,3 +49,42 @@ def test_ablation_is_paired_and_matches_individual_demo():
 def test_offline_uci_asset(name, counts):
     info = dataset_info(name)
     assert (info["samples"], info["features"], info["classes"]) == counts
+
+
+def test_dbscan_result_shape_and_noise_labels():
+    result = run_clustering(dict(dataset="seeds", algorithm="dbscan", eps=0.8, min_samples=5))
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "dbscan"
+    assert result["metrics"]["sse"] is None
+    assert result["metrics"]["clusters"] == 3
+    assert result["metrics"]["noise"] == 59
+    assert result["frames"][0]["event"] == "result"
+    labels = result["frames"][0]["cluster_ids"]
+    assert len(labels) == 210
+    assert labels.count(-1) == 59
+    assert len(result["frames"][0]["clusters"]) == 3
+    assert result["parameters"] == {"eps": 0.8, "min_samples": 5}
+
+
+def test_hierarchical_result_has_dendrogram_and_cut():
+    result = run_clustering(dict(dataset="seeds", algorithm="hierarchical", k=3, linkage="average"))
+    json.dumps(result, allow_nan=False)
+    assert result["kind"] == "hierarchical"
+    tree = result["dendrogram"]
+    assert tree["n"] == 210 and tree["cut"] == 3
+    assert len(tree["merges"]) == 209
+    labels = result["frames"][0]["cluster_ids"]
+    assert len(set(labels)) == 3
+    assert result["metrics"]["clusters"] == 3
+    assert result["metrics"]["sse"] is None
+
+
+@pytest.mark.parametrize("config", [
+    dict(dataset="seeds", algorithm="dbscan", eps=0, min_samples=5),
+    dict(dataset="seeds", algorithm="dbscan", eps=0.8, min_samples=0),
+    dict(dataset="seeds", algorithm="hierarchical", k=0, linkage="average"),
+    dict(dataset="seeds", algorithm="hierarchical", k=3, linkage="ward"),
+])
+def test_new_algorithms_validate_parameters(config):
+    with pytest.raises(ValueError):
+        run_clustering(config)

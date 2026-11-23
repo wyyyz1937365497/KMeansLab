@@ -4,7 +4,7 @@ from time import perf_counter
 
 import numpy as np
 
-from algorithms import bisecting, improved, kmeans
+from algorithms import bisecting, dbscan, hierarchical, improved, kmeans
 from core.datasets import list_datasets, load_dataset
 from core.metrics import adjusted_rand_index, euclidean_distances, silhouette_score
 from core.pca import PCA
@@ -37,6 +37,13 @@ def _int(config, name, default, low, high):
     if type(value) is not int or not low <= value <= high:
         raise ValueError(f"{name} 必须为 {low} 至 {high} 之间的整数。")
     return value
+
+
+def _float(config, name, default, low, high):
+    value = config.get(name, default)
+    if type(value) not in (int, float) or not low < value <= high:
+        raise ValueError(f"{name} 必须为 ({low}, {high}] 之间的数。")
+    return float(value)
 
 
 def _settings(config):
@@ -99,9 +106,111 @@ def datasets():
     return [dataset_info(name) for name in list_datasets()]
 
 
+def _clusters_from_labels(labels):
+    ids = [int(value) for value in np.unique(labels) if value != -1]
+    return [{"id": cid, "size": int(np.count_nonzero(labels == cid)),
+             "sse": None, "center": []} for cid in ids]
+
+
+def _single_frame(labels, details=None):
+    return [{
+        "step": 0,
+        "event": "result",
+        "cluster_ids": labels.tolist(),
+        "centers_2d": [],
+        "center_ids": [],
+        "sse": None,
+        "iteration": 0,
+        "split_id": None,
+        "split_before_sse": None,
+        "split_after_sse": None,
+        "tree": None,
+        "clusters": _clusters_from_labels(labels),
+        "details": details or {},
+    }]
+
+
+def _simple_result(data, x, pca, config, requested, kind, params, frames, metrics, extra=None):
+    payload = {
+        "dataset": config.get("dataset", "seeds"),
+        "algorithm": requested,
+        "kind": kind,
+        "parameters": params,
+        "points_2d": pca.transform(x).tolist(),
+        "explained_variance_ratio": pca.explained_variance_ratio.tolist(),
+        "frames": frames,
+        "metrics": metrics,
+        "feature_names": list(data.feature_names),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _run_dbscan(data, x, config, pca):
+    eps = _float(config, "eps", 0.8, 0, 10)
+    min_samples = _int(config, "min_samples", 5, 1, len(x))
+    start = perf_counter()
+    result = dbscan.fit(x, eps, min_samples)
+    elapsed = (perf_counter() - start) * 1000
+    labels = result.labels
+    keep = labels != -1
+    silhouette = None
+    if keep.sum() >= 2 and len(np.unique(labels[keep])) >= 2:
+        silhouette = silhouette_score(x[keep], labels[keep])
+    metrics = {
+        "sse": None,
+        "ari": None if data.labels is None else adjusted_rand_index(data.labels, labels),
+        "silhouette": silhouette,
+        "elapsed_ms": elapsed,
+        "iterations": 0,
+        "candidate_evaluations": 0,
+        "clusters": result.n_clusters,
+        "noise": result.n_noise,
+    }
+    frame = _single_frame(labels, {"核心点": int(result.core_mask.sum()),
+                                   "噪声点": result.n_noise})
+    params = {"eps": eps, "min_samples": min_samples}
+    return _simple_result(data, x, pca, config, "dbscan", "dbscan", params,
+                          frame, metrics,
+                          {"noise": result.n_noise, "core": int(result.core_mask.sum())})
+
+
+def _run_hierarchical(data, x, config, pca):
+    linkage = config.get("linkage", "average")
+    k = _int(config, "k", 3, 1, len(x))
+    start = perf_counter()
+    tree = hierarchical.fit(x, linkage)
+    labels = tree.cut(k)
+    elapsed = (perf_counter() - start) * 1000
+    silhouette = silhouette_score(x, labels) if k > 1 else None
+    metrics = {
+        "sse": None,
+        "ari": None if data.labels is None else adjusted_rand_index(data.labels, labels),
+        "silhouette": silhouette,
+        "elapsed_ms": elapsed,
+        "iterations": 0,
+        "candidate_evaluations": len(tree.merges),
+        "clusters": k,
+        "noise": 0,
+    }
+    merges = [[m.left, m.right, m.distance, m.size] for m in tree.merges]
+    frame = _single_frame(labels, {"linkage": linkage, "合并次数": len(merges)})
+    params = {"k": k, "linkage": linkage}
+    return _simple_result(data, x, pca, config, "hierarchical", "hierarchical", params,
+                          frame, metrics,
+                          {"dendrogram": {"n": len(x), "linkage": linkage,
+                                          "cut": k, "merges": merges}})
+
+
 def run_clustering(config):
     data, x, params = _settings(config)
     requested = config.get("algorithm", "bisecting")
+    pca = PCA.fit(x)
+    if requested == "dbscan":
+        return _run_dbscan(data, x, config, pca)
+    if requested == "hierarchical":
+        return _run_hierarchical(data, x, config, pca)
     algorithm = ALIASES.get(requested, requested)
     if algorithm not in VARIANTS:
         raise ValueError(f"未知算法：{requested}")
@@ -110,7 +219,6 @@ def run_clustering(config):
     if override not in (None, "random", "kmeans++"):
         raise ValueError("初始化方法必须是 random 或 kmeans++。")
     result, elapsed = _fit(x, algorithm, params, True, override)
-    pca = PCA.fit(x)
     frames = []
     for step, frame in enumerate(result.frames):
         ids = [int(cluster) for cluster in frame.center_ids]
@@ -139,6 +247,7 @@ def run_clustering(config):
     return {
         "dataset": config.get("dataset", "seeds"),
         "algorithm": requested,
+        "kind": "kmeans",
         "parameters": dict(params, init_method=override or variant.init,
                            restarts=params["restarts"] if variant.restart else 1),
         "points_2d": pca.transform(x).tolist(),

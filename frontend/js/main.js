@@ -43,8 +43,19 @@
       showTraj: $('#chk-traj').checked,
       selectedId: global.State.selectedCluster
     });
-    global.Charts.renderTree(frame, global.State.colorMap);
-    global.Charts.renderSse(global.State.result, index);
+    var kind = (global.State.result && global.State.result.kind) || 'kmeans';
+    if (kind === 'hierarchical') {
+      global.Charts.renderDendrogram(global.State.result);
+      global.Charts.renderMergeCurve(global.State.result);
+    } else if (kind === 'dbscan') {
+      global.Charts.renderTree(null, {});
+      global.Charts.setOverlayText('tree', 'DBSCAN 没有分裂树；红色 × 为噪声点。');
+      global.Charts.renderSse(null);
+      global.Charts.setOverlayText('sse', 'DBSCAN 不使用 SSE；评价见右侧指标。');
+    } else {
+      global.Charts.renderTree(frame, global.State.colorMap);
+      global.Charts.renderSse(global.State.result, index);
+    }
     global.Panels.renderFrame(frame, index, total);
     global.Panels.renderClusters(frame, global.State.selectedCluster, global.State.colorMap);
 
@@ -76,11 +87,32 @@
 
   /* ---------------- 结果清空 ---------------- */
 
+  function applyKindChrome(kind) {
+    var simple = kind === 'dbscan' || kind === 'hierarchical';
+    var hier = kind === 'hierarchical';
+    $('#card-timeline').classList.toggle('hidden', simple);
+    var traj = $('#chk-traj');
+    if (traj && traj.closest('label')) traj.closest('label').classList.toggle('hidden', simple);
+    $('#tree-title').textContent = hier ? '树状图' : '分裂树';
+    $('#tree-sub').textContent = hier
+      ? 'average linkage · 黄色虚线为切 K'
+      : (kind === 'dbscan' ? 'DBSCAN 不使用分裂树' : '与时间轴同步 · 点击节点可跳转');
+    $('#sse-title').textContent = hier ? '合并距离' : 'SSE 曲线';
+    $('#sse-sub').textContent = hier
+      ? '第 n 次合并的簇间距离'
+      : (kind === 'dbscan' ? 'DBSCAN 不使用 SSE' : '▲ 为分裂完成帧 · 点击可跳转');
+    if (kind === 'kmeans') {
+      global.Charts.setOverlayText('tree', '尚无分裂树');
+      global.Charts.setOverlayText('sse', '尚无数据');
+    }
+  }
+
   function clearResultView() {
     global.State.result = null;
     global.State.selectedCluster = null;
     global.State.colorMap = {};
     global.State.frameIndex = 0;
+    applyKindChrome('kmeans');
     $('#card-hero').dataset.result = '0';
     $('#btn-export-png').disabled = true;
     $('#btn-export-json').disabled = true;
@@ -142,16 +174,44 @@
       max_iter: intVal('#inp-max-iter', 100),
       tol: floatVal('#inp-tol', 1e-6),
       restarts: intVal('#inp-restarts', 5),
-      init_method: $('#sel-init').value
+      init_method: $('#sel-init').value,
+      eps: floatVal('#inp-eps', 0.8),
+      min_samples: intVal('#inp-min-samples', 5),
+      linkage: $('#sel-linkage').value
     };
-    if (!cfg.dataset) throw new Error('请先选择数据集');
-    if (!(cfg.k >= 1)) throw new Error('簇数 k 必须 ≥ 1');
     var n = global.State.datasetInfo && global.State.datasetInfo.samples;
-    if (n && cfg.k > n) throw new Error('簇数 k 不能超过样本数（' + n + '）');
-    if (!(cfg.max_iter >= 1)) throw new Error('最大迭代必须 ≥ 1');
-    if (!(cfg.tol >= 0)) throw new Error('收敛容差不能为负');
-    if (!(cfg.restarts >= 1)) throw new Error('重启次数必须 ≥ 1');
+    if (!cfg.dataset) throw new Error('请先选择数据集');
+    if (cfg.algorithm === 'dbscan') {
+      if (!(cfg.eps > 0 && cfg.eps <= 10)) throw new Error('eps 必须在 (0, 10] 之间');
+      if (!(cfg.min_samples >= 1)) throw new Error('min_samples 必须 ≥ 1');
+      if (n && cfg.min_samples > n) throw new Error('min_samples 不能超过样本数（' + n + '）');
+    } else {
+      if (!(cfg.k >= 1)) throw new Error('簇数 k 必须 ≥ 1');
+      if (n && cfg.k > n) throw new Error('簇数 k 不能超过样本数（' + n + '）');
+      if (cfg.algorithm !== 'hierarchical') {
+        if (!(cfg.max_iter >= 1)) throw new Error('最大迭代必须 ≥ 1');
+        if (!(cfg.tol >= 0)) throw new Error('收敛容差不能为负');
+        if (!(cfg.restarts >= 1)) throw new Error('重启次数必须 ≥ 1');
+      }
+    }
     return cfg;
+  }
+
+  function syncAlgorithmFields() {
+    var a = $('#sel-algorithm').value;
+    var isDb = a === 'dbscan';
+    var isHier = a === 'hierarchical';
+    var isKm = !isDb && !isHier;
+    $('#row-k').classList.toggle('hidden', isDb);
+    $('#field-seed').classList.toggle('hidden', !isKm);
+    $('#row-iter').classList.toggle('hidden', !isKm);
+    $('#row-restarts').classList.toggle('hidden', !isKm);
+    $('#row-dbscan').classList.toggle('hidden', !isDb);
+    $('#row-hier').classList.toggle('hidden', !isHier);
+    if (isDb) {
+      $('#inp-eps').title = '标准化特征空间中的邻域半径';
+      $('#inp-min-samples').title = '成为核心点所需的最少邻居数（含自身）';
+    }
   }
 
   function validateResult(res) {
@@ -176,13 +236,17 @@
       var res = await global.Bridge.call('run_clustering', cfg);
       validateResult(res);
       global.State.applyResult(res);
+      applyKindChrome(res.kind || 'kmeans');
       $('#card-hero').dataset.result = '1';
       $('#btn-export-png').disabled = false;
       $('#btn-export-json').disabled = false;
       global.Timeline.load(res.frames);           // 触发 frame → renderAll
       global.Panels.renderMetrics(global.State.result);
-      global.UI.toastSuccess('聚类完成：seed=' + cfg.seed + '，SSE=' + fmtNum(res.metrics && res.metrics.sse) +
-        '，耗时 ' + fmtNum(res.metrics && res.metrics.elapsed_ms, 0) + ' ms');
+      var m = res.metrics || {};
+      var summary = m.sse != null
+        ? 'SSE=' + fmtNum(m.sse)
+        : '簇数=' + fmtNum(m.clusters, 0) + (m.noise ? '，噪声=' + m.noise : '');
+      global.UI.toastSuccess('聚类完成：' + summary + '，耗时 ' + fmtNum(m.elapsed_ms, 0) + ' ms');
       global.UI.setStatus('ok', '就绪');
     } catch (e) {
       global.UI.toastError(e.message);
@@ -398,6 +462,7 @@
       var a = $('#sel-algorithm').value;
       if (a === 'improved') $('#sel-init').value = 'kmeans++';
       else if (a === 'kmeans') $('#sel-init').value = 'random';
+      syncAlgorithmFields();
     });
 
     // 数据集切换：结果属于旧数据集，必须清空
@@ -468,6 +533,10 @@
     Bus.on('toast', function (p) { global.UI.toast(p.kind, p.message); });
     Bus.on('selectCluster', function (rawId) {
       if (!global.State.result) return;
+      if (Number(rawId) === -1) {
+        global.UI.toastInfo('噪声点不属于任何簇（DBSCAN 的 -1 标签）');
+        return;
+      }
       var same = global.State.selectedCluster !== null &&
         String(global.State.selectedCluster) === String(rawId);
       global.State.selectedCluster = same ? null : rawId;
@@ -521,6 +590,7 @@
 
     // 3) 事件接线
     wireDom();
+    syncAlgorithmFields();
 
     // UI 自身就绪（无论后端是否可用），暴露验证选择器
     document.documentElement.dataset.ready = '1';

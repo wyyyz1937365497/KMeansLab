@@ -132,6 +132,14 @@
     if (node) node.classList.toggle('show', !!show);
   }
 
+  function setOverlayText(name, text) {
+    var id = OVERLAYS[name];
+    var node = id && document.getElementById(id);
+    if (!node) return;
+    var p = node.querySelector('p');
+    if (p && text) p.textContent = text;
+  }
+
   function pct(v) {
     return (typeof v === 'number' && isFinite(v)) ? (v * 100).toFixed(1) + '%' : '';
   }
@@ -216,14 +224,16 @@
       var cid = toNumId(ids[i]);
       var sel = selectedId !== null && selectedId !== undefined &&
         String(selectedId) === String(cid);
+      var noise = cid === -1;
       samples.push({
         value: [Number(p[0]), Number(p[1])],
         cluster: cid,
+        symbol: noise ? 'x' : undefined,
         itemStyle: {
-          color: colorMap[cid] || C.textDim,
-          opacity: sel ? 1 : 0.82
+          color: noise ? '#e45756' : (colorMap[cid] || C.textDim),
+          opacity: noise ? 0.75 : (sel ? 1 : 0.82)
         },
-        symbolSize: sel ? 8.5 : undefined
+        symbolSize: noise ? 7 : (sel ? 8.5 : undefined)
       });
     }
     if (samples.length) {
@@ -260,6 +270,7 @@
       (byCluster[smp.cluster] = byCluster[smp.cluster] || []).push(smp.value);
     }
     Object.keys(byCluster).forEach(function (key) {
+      if (toNumId(key) === -1) return;
       var hull = convexHull(byCluster[key]);
       if (!hull) return;
       var cx = 0, cy = 0;
@@ -394,7 +405,10 @@
           var v = params.value;
           var pos = '(' + global.UI.fmtNum(v[0], 3) + ', ' + global.UI.fmtNum(v[1], 3) + ')';
           if (params.seriesName === '质心') return '质心 #' + (params.data.id !== undefined ? params.data.id : '?') + '<br/>PCA ' + pos;
-          if (params.seriesName === '样本') return '簇 #' + (params.data.cluster !== undefined ? params.data.cluster : '?') + '<br/>PCA ' + pos;
+          if (params.seriesName === '样本') {
+            var label = params.data.cluster === -1 ? '噪声点' : '簇 #' + (params.data.cluster !== undefined ? params.data.cluster : '?');
+            return label + '<br/>PCA ' + pos;
+          }
           return params.seriesName || '';
         }
       }),
@@ -787,6 +801,120 @@
     }, { notMerge: true });
   }
 
+  /* ---------------- 层次聚类：树状图与合并距离 ---------------- */
+
+  function renderDendrogram(result) {
+    var inst = instances.tree;
+    if (!inst) return;
+    var d = result && result.dendrogram;
+    if (!d || !Array.isArray(d.merges) || !d.merges.length) {
+      inst.clear();
+      setOverlay('tree', true);
+      return;
+    }
+    setOverlay('tree', false);
+
+    var n = d.n, merges = d.merges;
+    var height = {}, xpos = {}, weight = {}, data = [];
+    var i;
+    for (i = 0; i < n; i++) { height[i] = 0; xpos[i] = i; weight[i] = 1; }
+    merges.forEach(function (row, idx) {
+      var l = row[0], r = row[1], dist = row[2], size = row[3];
+      var node = n + idx;
+      data.push([xpos[l], height[l]], [xpos[l], dist], null);
+      data.push([xpos[r], height[r]], [xpos[r], dist], null);
+      data.push([xpos[l], dist], [xpos[r], dist], null);
+      height[node] = dist;
+      weight[node] = size;
+      xpos[node] = (xpos[l] * weight[l] + xpos[r] * weight[r]) / (weight[l] + weight[r]);
+    });
+
+    var cutIndex = n - d.cut;
+    var series = [{
+      name: '合并',
+      type: 'line',
+      data: data,
+      showSymbol: false,
+      symbol: 'none',
+      connectNulls: false,
+      silent: true,
+      z: 2,
+      lineStyle: { color: C.textDim, width: 1.1 }
+    }];
+    if (cutIndex > 0 && cutIndex < merges.length) {
+      series[0].markLine = {
+        silent: true,
+        symbol: 'none',
+        label: { formatter: '切 K=' + d.cut, color: C.textFaint, fontSize: 9, position: 'insideEndTop' },
+        lineStyle: { color: '#d8b26a', width: 1.2, type: 'dashed' },
+        data: [{ yAxis: merges[cutIndex - 1][2] }]
+      };
+    }
+
+    inst.setOption({
+      backgroundColor: 'transparent',
+      animationDuration: 260,
+      grid: { left: 44, right: 18, top: 26, bottom: 22, containLabel: true },
+      tooltip: Object.assign(tooltipBase(), { trigger: 'item', formatter: function () { return ''; }, show: false }),
+      xAxis: {
+        type: 'value', min: -0.5, max: n - 0.5,
+        axisLabel: { show: false }, axisLine: { lineStyle: { color: C.axis } },
+        splitLine: { show: false }
+      },
+      yAxis: valueAxis('合并距离'),
+      series: series
+    }, { notMerge: true });
+  }
+
+  function renderMergeCurve(result) {
+    var inst = instances.sse;
+    if (!inst) return;
+    var d = result && result.dendrogram;
+    if (!d || !Array.isArray(d.merges) || !d.merges.length) {
+      inst.clear();
+      setOverlay('sse', true);
+      return;
+    }
+    setOverlay('sse', false);
+    var data = d.merges.map(function (row, i) { return [i + 1, row[2]]; });
+    var cutIndex = d.n - d.cut;
+    var series = [{
+      name: '合并距离',
+      type: 'line',
+      data: data,
+      smooth: 0.15,
+      showSymbol: false,
+      z: 3,
+      lineStyle: { color: C.accent, width: 1.8 },
+      areaStyle: { color: C.accent, opacity: 0.06 }
+    }];
+    if (cutIndex > 0 && cutIndex <= data.length) {
+      series[0].markLine = {
+        silent: true,
+        symbol: 'none',
+        label: { formatter: '切 K=' + d.cut, color: C.textFaint, fontSize: 9 },
+        lineStyle: { color: '#d8b26a', width: 1.2, type: 'dashed' },
+        data: [{ xAxis: cutIndex }]
+      };
+    }
+    inst.setOption({
+      backgroundColor: 'transparent',
+      animationDuration: 260,
+      grid: { left: 44, right: 20, top: 28, bottom: 23, containLabel: true },
+      tooltip: Object.assign(tooltipBase(), {
+        trigger: 'axis',
+        formatter: function (params) {
+          var p = params && params[0];
+          if (!p) return '';
+          return '第 ' + p.value[0] + ' 次合并<br/>距离 ' + global.UI.fmtNum(p.value[1], 3);
+        }
+      }),
+      xAxis: Object.assign(valueAxis('合并次数'), { type: 'value' }),
+      yAxis: valueAxis('合并距离'),
+      series: series
+    }, { notMerge: true });
+  }
+
   /* ---------------- 导出 / 其他 ---------------- */
 
   /** 取图表 PNG dataURL；pixelRatio=2，带深色底。 */
@@ -824,6 +952,9 @@
     renderScatter: renderScatter,
     renderTree: renderTree,
     renderSse: renderSse,
+    renderDendrogram: renderDendrogram,
+    renderMergeCurve: renderMergeCurve,
+    setOverlayText: setOverlayText,
     renderCompareBar: renderCompareBar,
     renderSensitivity: renderSensitivity,
     bindScatterClick: bindScatterClick,

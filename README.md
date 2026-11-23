@@ -37,9 +37,14 @@ uv run --locked python scripts/run_experiments.py ./experiment_results
 
 批处理输出 Seeds/Wine 逐次对比结果、K 扫描及固定种子的演示帧。耗时受硬件和进程调度影响；跨平台对比应针对 SSE、ARI、轮廓系数等数值使用浮点容差。算法和数据层不依赖 GUI；`app/` 统一记录/投影/序列化，`frontend/` 只播放已记录状态。
 
-## 扩展：DBSCAN 与层次聚类
+## DBSCAN 与层次聚类
 
-为课堂展示补充了两个基础算法，不接入主界面的时间轴，单独出图：
+实验台的算法下拉里可直接选择，不需要改代码：
+
+- **DBSCAN**：填写 `eps` 与 `min_samples`；散点中红色 × 为噪声，右侧指标显示簇数、噪声数、ARI 与轮廓系数；时间轴、分裂树、SSE 会自动切到对应的空态说明。
+- **层次聚类**：选择 `linkage`（single/average/complete）与切树簇数 `k`；中栏显示树状图（黄色虚线为切 K），SSE 卡片换成“合并距离”曲线。
+
+命令行仍可一次性导出展示用图：
 
 ```sh
 # 需要 matplotlib；可直接用已装绘图库的 docs 环境
@@ -47,7 +52,7 @@ uv run --locked python scripts/run_experiments.py ./experiment_results
 ```
 
 - `algorithms/dbscan.py`：核心点 / 边界点 / 噪声，eps 与 min_samples；
-- `algorithms/hierarchical.py`：single / average / complete 三种链接，输出 dendrogram 的 Z 矩阵，`cut(k)` 切树；
+- `algorithms/hierarchical.py`：三种链接，输出 dendrogram 的 Z 矩阵，`cut(k)` 切树；
 - 图：`docs/figures/kmeans-vs-dbscan.png`（双月数据上 K-Means 失败、DBSCAN 成功）、`docs/figures/dbscan.png`、`docs/figures/hierarchical.png`；
 - 指标：`docs/clustering_extras.json`（ARI、轮廓系数、噪声数）。
 

@@ -83,6 +83,19 @@
     }
     if (hint) hint.classList.add('hidden');
     var m = result.metrics;
+    var kind = result.kind || 'kmeans';
+    if (kind !== 'kmeans') {
+      addKv(kv, '簇数', fmtNum(m.clusters, 0));
+      if (kind === 'dbscan') addKv(kv, '噪声点', fmtNum(m.noise, 0));
+      addKv(kv, 'ARI（调整兰德指数）', fmtNum(m.ari));
+      addKv(kv, '轮廓系数', fmtNum(m.silhouette));
+      addKv(kv, '耗时', m.elapsed_ms != null ? fmtNum(m.elapsed_ms, 1) + ' ms' : '—');
+      addKv(kv, kind === 'hierarchical' ? '合并次数' : '参数',
+        kind === 'hierarchical' ? fmtNum(m.candidate_evaluations, 0)
+          : 'eps=' + fmtNum((result.parameters || {}).eps));
+      global.UI.$('#metrics-algo').textContent = global.UI.algoLabel(result.algorithm || '');
+      return;
+    }
     addKv(kv, 'SSE（簇内平方和）', fmtNum(m.sse));
     addKv(kv, 'ARI（调整兰德指数）', fmtNum(m.ari));
     addKv(kv, '轮廓系数', fmtNum(m.silhouette));
@@ -108,9 +121,9 @@
 
     addKv(kv, '步骤', (index != null ? index : '—') + ' / ' + (total != null && total > 0 ? total - 1 : '—'));
     addKv(kv, '事件', global.UI.eventLabel(frame.event));
-    addKv(kv, '局部迭代', frame.iteration != null ? frame.iteration : '—');
-    addKv(kv, '当前 SSE', fmtNum(frame.sse));
-    addKv(kv, '活动簇数', (frame.center_ids || []).length);
+    if (frame.iteration) addKv(kv, '局部迭代', frame.iteration);
+    if (frame.sse != null) addKv(kv, '当前 SSE', fmtNum(frame.sse));
+    addKv(kv, '活动簇数', (frame.center_ids || []).length || (frame.clusters || []).length);
     if (frame.split_id !== undefined && frame.split_id !== null) {
       addKv(kv, '分裂簇 #', frame.split_id);
     }
@@ -160,6 +173,14 @@
       chip.addEventListener('click', function () { Bus.emit('selectCluster', c.id); });
       chips.appendChild(chip);
     });
+
+    var noise = frame.details && frame.details['噪声点'];
+    if (noise) {
+      var noiseChip = el('span', 'chip');
+      noiseChip.appendChild(el('span', null, '噪声 × ' + noise));
+      noiseChip.title = 'DBSCAN 中不归属任何簇的点';
+      chips.appendChild(noiseChip);
+    }
 
     var sel = null;
     clusters.forEach(function (c) {
@@ -211,7 +232,7 @@
       scroll.appendChild(tbl);
       detail.appendChild(scroll);
     } else {
-      detail.appendChild(el('p', 'muted small', '（该簇无中心数据）'));
+      detail.appendChild(el('p', 'muted small', '（该算法不提供质心）'));
     }
   }
 

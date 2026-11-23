@@ -59,7 +59,7 @@
     });
     frames.forEach(function (f) {
       ((f && f.cluster_ids) || []).forEach(function (id) {
-        if (!(id in map)) map[id] = colors[i++ % colors.length];
+        if (id !== -1 && !(id in map)) map[id] = colors[i++ % colors.length];
       });
     });
     return map;

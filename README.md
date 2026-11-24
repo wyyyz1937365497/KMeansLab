@@ -58,7 +58,7 @@ uv run --locked python scripts/run_experiments.py ./experiment_results
 
 展示材料：
 
-- [口语底稿](docs/presentation_notes.md)
+- [演示稿（按算法顺序，含每个方法的代码位置）](docs/presentation_script.md)
 - [一页速查卡](docs/算法速查卡.pdf)
 
 - [数据来源与许可](datasets/SOURCES.md)

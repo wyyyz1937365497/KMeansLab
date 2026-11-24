@@ -35,16 +35,26 @@ def _validate(values, eps, min_samples):
 
 
 def fit(values, eps, min_samples):
-    """执行 DBSCAN，返回每个样本的簇标签（-1 表示噪声）。"""
+    """执行 DBSCAN，返回每个样本的簇标签（-1 表示噪声）。
+
+    两步：
+    1. 找核心点：对每个点数一数 eps 邻域内有几个样本（含自己），≥ min_samples 即为核心点；
+    2. 连通扩张：从还没归簇的核心点出发做 BFS，邻居进同一簇；邻居也是核心点才继续向外扩。
+    """
     x = _validate(values, eps, min_samples)
     n = len(x)
+    # 第 1 步：全距离矩阵（n×n），后面数邻居直接查表
     distances = euclidean_distances(x)
     neighbours = distances <= eps          # 含自身
+    # 邻居数 = 距离 ≤ eps 的样本数（对角线为 0，所以包含自己）
     neighbour_counts = neighbours.sum(axis=1)
+    # 判定核心点：邻居数 ≥ min_samples
     core_mask = neighbour_counts >= min_samples
 
+    # 第 2 步：标签全设为 -1（未归簇）；最后没被任何簇吸收的就是噪声
     labels = np.full(n, -1, dtype=np.intp)
     cluster = 0
+    # 只从「核心点且尚未归簇」的样本开始新簇；簇编号按发现顺序 0, 1, 2…
     for seed in range(n):
         if not core_mask[seed] or labels[seed] != -1:
             continue
@@ -55,14 +65,17 @@ def fit(values, eps, min_samples):
             point = queue.pop()
             if labels[point] == -1:
                 labels[point] = cluster
+            # 边界点只被归入当前簇，不通过它继续扩张
             if not core_mask[point]:
                 continue
+            # 核心点：把尚未归簇的邻居拉进来，加入队列继续扩张
             for other in np.flatnonzero(neighbours[point]):
                 if labels[other] == -1:
                     labels[other] = cluster
                     queue.append(other)
         cluster += 1
 
+    # 没有被任何簇吸收的样本保持 -1，即噪声
     return DBSCANResult(
         labels=labels,
         core_mask=core_mask,

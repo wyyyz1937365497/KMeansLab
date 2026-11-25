@@ -216,4 +216,28 @@ uv run --locked pytest -v
 uv run --locked python scripts/run_experiments.py ./experiment_results
 ```
 
-测试覆盖 K=1、K=N、K 越界、重复点、空簇修复、逐帧 SSE 一致性、树叶与标签一致性以及多种子对比，共 23 项，Linux 与 Windows 均通过。演示使用 B0、seed=42、K=3；逐次运行记录保存在 `03_TestSamples/expected_results/`。
+测试覆盖 K=1、K=N、K 越界、重复点、空簇修复、逐帧 SSE 一致性、树叶与标签一致性以及多种子对比，共 45 项，在 Linux 上通过；Windows 侧通过打包后的程序启动与界面检查验证。演示使用 B0、seed=42、K=3；逐次运行记录保存在 `03_TestSamples/expected_results/`。
+
+## 附录　扩展算法：DBSCAN 与层次聚类
+
+课程要求从 K-Means、DBSCAN、层次聚类中选择实现。除 K-Means 系列外，本实验补充了两个基础版本并接入同一界面：算法在 `algorithms/dbscan.py`、`algorithms/hierarchical.py`，可在实验台切换参数并直接查看结果。
+
+### A.1　DBSCAN
+
+DBSCAN 按密度连通性聚类：统计每个样本 eps 邻域内（含自身）的样本数，达到 min_samples 即为核心点；从核心点出发做 BFS，邻居进入同一簇，邻居若也是核心点则继续扩散。一个簇是由密度可达关系导出的最大密度相连集合；到不了任何集合的点记为噪声（−1），因此它是部分聚类。
+
+在 Seeds 上取 eps=0.8、min_samples=5：核心点 113 个、边界点 38 个、噪声 59 个，得到 3 个簇（107 / 15 / 29），ARI 0.273，轮廓系数 0.3755（仅在非噪声点上计算）。eps 增大到 1.0 时三个簇被连成一个，只剩 13 个噪声点，说明参数敏感。双月数据上 DBSCAN 的 ARI 为 1.000，而 K-Means（K=2）只有 0.234，对非凸簇的优势明显。
+
+![双月数据：K-Means 与 DBSCAN](figures/kmeans-vs-dbscan.png)
+
+![Seeds 上的 DBSCAN](figures/dbscan.png)
+
+### A.2　层次聚类
+
+采用自底向上的凝聚式：每个样本先自成一簇，每轮合并距离最近的两簇，并更新临近度矩阵；average linkage 的距离为两簇所有点对距离的均值。合并历史构成树状图，在对应高度切一刀即得到 K 个簇。
+
+Seeds 全量数据（average、K=3）：ARI 0.686，轮廓系数 0.376；取每类 30 个（共 90）画树时，ARI 0.8115，轮廓系数 0.4367。朴素实现时间复杂度 O(n³)，需要维护 n×n 的距离矩阵，内存 O(n²)；合并不可撤销，因此和二分 K-Means 一样属于局部最优。
+
+![Seeds 子集的树状图与切分](figures/hierarchical.png)
+
+两个算法与原有 K-Means 代码路径相互独立，不改变 K-Means 的数值结果；界面中 DBSCAN 用红色 × 标记噪声，层次聚类显示树状图与合并距离曲线。
